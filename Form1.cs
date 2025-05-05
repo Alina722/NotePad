@@ -19,6 +19,18 @@ namespace NotePad
         }
         private Stack<string> undoStack = new Stack<string>();
         private Stack<string> redoStack = new Stack<string>();
+
+        // 更新 ListBox
+        void UpdateListBox()
+        {
+            listUndo.Items.Clear(); // 清空 ListBox 中的元素
+
+            // 將堆疊中的內容逐一添加到 ListBox 中
+            foreach (string item in undoStack)
+            {
+                listUndo.Items.Add(item);
+            }
+        }
         private void btnOpen_Click(object sender, EventArgs e)
         {
             // 設置對話方塊標題
@@ -168,18 +180,6 @@ namespace NotePad
                     }
                 }
                 UpdateListBox(); // 更新 ListBox
-            }
-        }
-
-        // 更新 ListBox
-        void UpdateListBox()
-        {
-            listUndo.Items.Clear(); // 清空 ListBox 中的元素
-
-            // 將堆疊中的內容逐一添加到 ListBox 中
-            foreach (string item in undoStack)
-            {
-                listUndo.Items.Add(item);
             }
         }
 
