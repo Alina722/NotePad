@@ -20,56 +20,17 @@ namespace NotePad
             InitializeFontSizeComboBox();
             InitializeFontStyleComboBox();
         }
-        private Stack<string> undoStack = new Stack<string>();
-        private Stack<string> redoStack = new Stack<string>();
 
-        // 更新 ListBox
-        void UpdateListBox()
-        {
-            listUndo.Items.Clear(); // 清空 ListBox 中的元素
+        private bool isUndoRedo = false;                           // 是否在回復或重作階段
+        private Stack<MemoryStream> undoStack = new Stack<MemoryStream>(); // 回復堆疊
+        private Stack<MemoryStream> redoStack = new Stack<MemoryStream>(); // 重作堆疊
+        //private Stack<string> undoStack = new Stack<string>();     
+        //private Stack<string> redoStack = new Stack<string>();     
+        private const int MaxHistoryCount = 10;                    // 最多紀錄10個紀錄
 
-            // 將堆疊中的內容逐一添加到 ListBox 中
-            foreach (string item in undoStack)
-            {
-                listUndo.Items.Add(item);
-            }
-        }
+        private int selectionStart = 0;                            // 記錄文字反白的起點
+        private int selectionLength = 0;                           // 記錄文字反白的長度
 
-        private void InitializeFontComboBox()
-        {
-            // 將所有系統字體名稱添加到字體選擇框中
-            foreach (FontFamily font in FontFamily.Families)
-            {
-                comboBoxFont.Items.Add(font.Name);
-            }
-            // 設置預設選中的項目為第一個字體
-            comboBoxFont.SelectedIndex = 0;
-        }
-
-        // 初始化字體大小下拉選單
-        private void InitializeFontSizeComboBox()
-        {
-            // 從8開始，每次增加2，直到72，將這些數值添加到字體大小選擇框中
-            for (int i = 8; i <= 72; i += 2)
-            {
-                comboBoxSize.Items.Add(i);
-            }
-            // 設置預設選中的項目為第三個大小，即12字體大小
-            comboBoxSize.SelectedIndex = 2;
-        }
-
-        // 初始化字體樣式下拉選單
-        private void InitializeFontStyleComboBox()
-        {
-            // 將不同的字體樣式添加到字體樣式選擇框中
-            comboBoxStyle.Items.Add(FontStyle.Regular.ToString());   // 正常
-            comboBoxStyle.Items.Add(FontStyle.Bold.ToString());      // 粗體
-            comboBoxStyle.Items.Add(FontStyle.Italic.ToString());    // 斜體
-            comboBoxStyle.Items.Add(FontStyle.Underline.ToString()); // 底線
-            comboBoxStyle.Items.Add(FontStyle.Strikeout.ToString()); // 刪除線
-                                                                     // 設置預設選中的項目為第一個樣式，即正常字體
-            comboBoxStyle.SelectedIndex = 0;
-        }
         private void btnOpen_Click(object sender, EventArgs e)
         {
             // 設置對話方塊標題
@@ -116,7 +77,6 @@ namespace NotePad
                         // 如果是RTF文件，使用RichTextBox的LoadFile方法
                         rtbText.LoadFile(selectedFileName, RichTextBoxStreamType.RichText);
                     }
-
                 }
                 catch (Exception ex)
                 {
@@ -129,6 +89,7 @@ namespace NotePad
                 MessageBox.Show("使用者取消了選擇檔案操作。", "訊息", MessageBoxButtons.OKCancel, MessageBoxIcon.Exclamation);
             }
         }
+
         private void btnSave_Click(object sender, EventArgs e)
         {
             // 設置對話方塊標題
@@ -190,29 +151,52 @@ namespace NotePad
             }
         }
 
-        private const int MaxHistoryCount = 10; // 最多紀錄10個紀錄
-        private bool isUndo = false;
+        private void btnUndo_Click(object sender, EventArgs e)
+        {
+            if (undoStack.Count > 1)
+            {
+                isUndoRedo = true;
+                redoStack.Push(undoStack.Pop()); // 將回復堆疊最上面的紀錄移出，再堆到重作堆疊
+                MemoryStream lastSavedState = undoStack.Peek(); // 將回復堆疊最上面一筆紀錄顯示
+                LoadFromMemory(lastSavedState);
+                UpdateListBox();
+                isUndoRedo = false;
+            }
+        }
+
+        private void btnRedo_Click(object sender, EventArgs e)
+        {
+            if (redoStack.Count > 0)
+            {
+                isUndoRedo = true;
+                undoStack.Push(redoStack.Pop()); // 將重作堆疊最上面的紀錄移出，再堆到回復堆疊
+                MemoryStream lastSavedState = undoStack.Peek(); // 將回復堆疊最上面一筆紀錄顯示
+                LoadFromMemory(lastSavedState);
+                UpdateListBox();
+                isUndoRedo = false;
+            }
+        }
+
         private void rtbText_TextChanged(object sender, EventArgs e)
         {
             // 只有當isUndo這個變數是false的時候，才能堆疊文字編輯紀錄
-            // 只有當isUndo這個變數是false的時候，才能堆疊文字編輯紀錄
             if (isUndoRedo == false)
             {
-                undoStack.Push(rtbText.Text); // 將當前的文本內容加入堆疊
+                SaveCurrentStateToStack(); // 將當前的文本內容加入堆疊
                 redoStack.Clear();            // 清空重作堆疊
 
                 // 確保堆疊中只保留最多10個紀錄
                 if (undoStack.Count > MaxHistoryCount)
                 {
                     // 用一個臨時堆疊，將除了最下面一筆的文字記錄之外，將文字紀錄堆疊由上而下，逐一移除再堆疊到臨時堆疊之中
-                    Stack<string> tempStack = new Stack<string>();
+                    Stack<MemoryStream> tempStack = new Stack<MemoryStream>();
                     for (int i = 0; i < MaxHistoryCount; i++)
                     {
                         tempStack.Push(undoStack.Pop());
                     }
                     undoStack.Clear(); // 清空堆疊
                                        // 文字編輯堆疊紀錄清空之後，再將暫存堆疊（tempStack）中的資料，逐一放回到文字編輯堆疊紀錄
-                    foreach (string item in tempStack)
+                    foreach (MemoryStream item in tempStack)
                     {
                         undoStack.Push(item);
                     }
@@ -220,12 +204,63 @@ namespace NotePad
                 UpdateListBox(); // 更新 ListBox
             }
         }
-        // 這個方法在 comboBox 的選項變更時觸發
-        private int selectionStart = 0;                            // 記錄文字反白的起點
-        private int selectionLength = 0;
+
+        // 更新 ListBox
+        void UpdateListBox()
+        {
+            listUndo.Items.Clear(); // 清空 ListBox 中的元素
+
+            // 將堆疊中的內容逐一添加到 ListBox 中
+            foreach (MemoryStream item in undoStack)
+            {
+                listUndo.Items.Add(item);
+            }
+        }
+
+        // 初始化字體下拉選單
+        private void InitializeFontComboBox()
+        {
+            // 將所有系統字體名稱添加到字體選擇框中
+            foreach (FontFamily font in FontFamily.Families)
+            {
+                comboBoxFont.Items.Add(font.Name);
+            }
+            // 設置預設選中的項目為第一個字體
+            comboBoxFont.SelectedIndex = 0;
+        }
+
+        // 初始化字體大小下拉選單
+        private void InitializeFontSizeComboBox()
+        {
+            // 從8開始，每次增加2，直到72，將這些數值添加到字體大小選擇框中
+            for (int i = 8; i <= 72; i += 2)
+            {
+                comboBoxSize.Items.Add(i);
+            }
+            // 設置預設選中的項目為第三個大小，即12字體大小
+            comboBoxSize.SelectedIndex = 2;
+        }
+
+        // 初始化字體樣式下拉選單
+        private void InitializeFontStyleComboBox()
+        {
+            // 將不同的字體樣式添加到字體樣式選擇框中
+            comboBoxStyle.Items.Add(FontStyle.Regular.ToString());   // 正常
+            comboBoxStyle.Items.Add(FontStyle.Bold.ToString());      // 粗體
+            comboBoxStyle.Items.Add(FontStyle.Italic.ToString());    // 斜體
+            comboBoxStyle.Items.Add(FontStyle.Underline.ToString()); // 底線
+            comboBoxStyle.Items.Add(FontStyle.Strikeout.ToString()); // 刪除線
+                                                                     // 設置預設選中的項目為第一個樣式，即正常字體
+            comboBoxStyle.SelectedIndex = 0;
+        }
+
         private void comboBox_SelectedIndexChanged(object sender, EventArgs e)
         {
-            // 檢查當前選擇的文字是否有字型，如果有，則進行後續處理
+            // 保存當前選擇的文字起始位置和長度
+            selectionStart = rtbText.SelectionStart;
+            selectionLength = rtbText.SelectionLength;
+
+            // 確保當前選擇的文字具有字型
             if (rtbText.SelectionFont != null)
             {
                 // 從下拉選單中獲取選擇的字型、大小和樣式
@@ -262,30 +297,30 @@ namespace NotePad
                     rtbText.SelectionFont = newFont;
                 }
             }
+
+            // 恢復選擇狀態
+            rtbText.Focus();
+            rtbText.Select(selectionStart, selectionLength);
         }
 
-        private void btnUndo_Click(object sender, EventArgs e)
+        // 將文字編輯狀態保存到回復堆疊
+        private void SaveCurrentStateToStack()
         {
-            if (undoStack.Count > 1)
-            {
-                isUndoRedo = true;
-                redoStack.Push(undoStack.Pop()); // 將回復堆疊最上面的紀錄移出，再堆到重作堆疊
-                rtbText.Text = undoStack.Peek(); // 將回復堆疊最上面一筆紀錄顯示
-                UpdateListBox();
-                isUndoRedo = false;
-            }
+            // 創建一個新的 MemoryStream 來保存文字編輯狀態
+            MemoryStream memoryStream = new MemoryStream();
+            // 將 RichTextBox 的內容保存到 memoryStream
+            rtbText.SaveFile(memoryStream, RichTextBoxStreamType.RichText);
+            // 將 memoryStream 放入回復堆疊
+            undoStack.Push(memoryStream);
         }
-        private bool isUndoRedo = false;
-        private void btnRedo_Click(object sender, EventArgs e)
+
+        // 將文字狀態從記憶體中顯示到 RichTextBox
+        private void LoadFromMemory(MemoryStream memoryStream)
         {
-            if (redoStack.Count > 0)
-            {
-                isUndoRedo = true;
-                undoStack.Push(redoStack.Pop()); // 將重作堆疊最上面的紀錄移出，再堆到回復堆疊
-                rtbText.Text = undoStack.Peek(); // 將回復堆疊最上面一筆紀錄顯示
-                UpdateListBox();
-                isUndoRedo = false;
-            }
+            // 將 memoryStream 的指標重置到開始位置
+            memoryStream.Seek(0, SeekOrigin.Begin);
+            // 將 memoryStream 的內容放到到 RichTextBox
+            rtbText.LoadFile(memoryStream, RichTextBoxStreamType.RichText);
         }
     }
 }
